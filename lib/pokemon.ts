@@ -4,24 +4,16 @@ import { API_ENDPOINTS, API_CONFIG } from "@/constants/api"
 const { LIMIT } = API_CONFIG.PAGINATION
 const { MAX_ATTEMPTS, INITIAL_BACKOFF } = API_CONFIG.RETRY
 
-// Cache for Pokemon data to reduce API calls
-const CACHE: Record<string, any> = {}
-
 // Helper function to add delay between requests
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Helper function to fetch with retry logic and better error handling
 export async function fetchWithRetry(url: string, retries = MAX_ATTEMPTS, backoff = INITIAL_BACKOFF) {
-  const cacheKey = url
-
-  // Check cache first
-  if (CACHE[cacheKey]) {
-    return CACHE[cacheKey]
-  }
-
   try {
     const response = await fetch(url, {
-      cache: "force-cache", // Use cache-first strategy
+      next: { 
+        revalidate: 3600 // Cache for 1 hour
+      }
     })
 
     // Handle rate limiting
@@ -45,12 +37,7 @@ export async function fetchWithRetry(url: string, retries = MAX_ATTEMPTS, backof
 
     // Try to parse as JSON
     try {
-      const data = JSON.parse(text)
-
-      // Store in cache
-      CACHE[cacheKey] = data
-
-      return data
+      return JSON.parse(text)
     } catch (parseError) {
       console.error(`Error parsing JSON from ${url}:`, text.substring(0, 100))
       throw new Error(`Invalid JSON response from ${url}`)
@@ -66,8 +53,8 @@ export async function fetchWithRetry(url: string, retries = MAX_ATTEMPTS, backof
 }
 
 /**
- * Creates a placeholder Pokemon with minimal data when API calls fail
- */
+* Creates a placeholder Pokemon with minimal data when API calls fail
+*/
 export function createPlaceholderPokemon(name: string, url: string): Pokemon {
   // Extract ID from URL
   const idMatch = url.match(/\/pokemon\/(\d+)\//)
@@ -93,8 +80,8 @@ export function createPlaceholderPokemon(name: string, url: string): Pokemon {
 }
 
 /**
- * Provides fallback Pokemon data when API calls fail
- */
+* Provides fallback Pokemon data when API calls fail
+*/
 export function getFallbackPokemonList(page = 1): { results: Pokemon[]; count: number } {
   // Generate placeholder Pokemon for the current page
   const offset = (page - 1) * LIMIT
@@ -139,30 +126,40 @@ export async function getPokemonList(page = 1, type = ""): Promise<{ results: Po
 
       const pokemonDetails: Pokemon[] = []
 
-      for (const pokemon of data.results) {
-        try {
-          await delay(300)
-          const details = await fetchWithRetry(pokemon.url)
-          pokemonDetails.push({
-            id: details.id,
-            name: details.name,
-            image:
-              details.sprites.other["official-artwork"]?.front_default ||
-              details.sprites.front_default ||
-              `/placeholder.svg?height=200&width=200&text=${details.name}`,
-            types: details.types.map((t: any) => t.type.name),
-            height: details.height,
-            weight: details.weight,
-            abilities: details.abilities.map((a: any) => a.ability.name),
-            stats: details.stats.map((s: any) => ({
-              name: s.stat.name,
-              value: s.base_stat,
-            })),
+      // Process Pokemon in batches to avoid overwhelming the API
+      const batchSize = 5
+      for (let i = 0; i < data.results.length; i += batchSize) {
+        const batch = data.results.slice(i, i + batchSize)
+        
+        // Fetch details for each Pokemon in the batch concurrently
+        const batchResults = await Promise.all(
+          batch.map(async (pokemon: any) => {
+            try {
+              const details = await fetchWithRetry(pokemon.url)
+              return {
+                id: details.id,
+                name: details.name,
+                image:
+                  details.sprites.other["official-artwork"]?.front_default ||
+                  details.sprites.front_default ||
+                  `/placeholder.svg?height=200&width=200&text=${details.name}`,
+                types: details.types.map((t: any) => t.type.name),
+                height: details.height,
+                weight: details.weight,
+                abilities: details.abilities.map((a: any) => a.ability.name),
+                stats: details.stats.map((s: any) => ({
+                  name: s.stat.name,
+                  value: s.base_stat,
+                })),
+              }
+            } catch (error) {
+              console.error(`Error fetching details for ${pokemon.name}:`, error)
+              return createPlaceholderPokemon(pokemon.name, pokemon.url)
+            }
           })
-        } catch (error) {
-          console.error(`Error fetching details for ${pokemon.name}:`, error)
-          pokemonDetails.push(createPlaceholderPokemon(pokemon.name, pokemon.url))
-        }
+        )
+        
+        pokemonDetails.push(...batchResults)
       }
 
       return {
@@ -189,30 +186,40 @@ async function getPokemonByType(type: string, page: number): Promise<{ results: 
 
     const pokemonDetails: Pokemon[] = []
 
-    for (const url of paginatedUrls) {
-      try {
-        await delay(300)
-        const details = await fetchWithRetry(url)
-        pokemonDetails.push({
-          id: details.id,
-          name: details.name,
-          image:
-            details.sprites.other["official-artwork"]?.front_default ||
-            details.sprites.front_default ||
-            `/placeholder.svg?height=200&width=200&text=${details.name}`,
-          types: details.types.map((t: any) => t.type.name),
-          height: details.height,
-          weight: details.weight,
-          abilities: details.abilities.map((a: any) => a.ability.name),
-          stats: details.stats.map((s: any) => ({
-            name: s.stat.name,
-            value: s.base_stat,
-          })),
+    // Process Pokemon in batches to avoid overwhelming the API
+    const batchSize = 5
+    for (let i = 0; i < paginatedUrls.length; i += batchSize) {
+      const batch = paginatedUrls.slice(i, i + batchSize)
+      
+      // Fetch details for each Pokemon in the batch concurrently
+      const batchResults = await Promise.all(
+        batch.map(async (url: string) => {
+          try {
+            const details = await fetchWithRetry(url)
+            return {
+              id: details.id,
+              name: details.name,
+              image:
+                details.sprites.other["official-artwork"]?.front_default ||
+                details.sprites.front_default ||
+                `/placeholder.svg?height=200&width=200&text=${details.name}`,
+              types: details.types.map((t: any) => t.type.name),
+              height: details.height,
+              weight: details.weight,
+              abilities: details.abilities.map((a: any) => a.ability.name),
+              stats: details.stats.map((s: any) => ({
+                name: s.stat.name,
+                value: s.base_stat,
+              })),
+            }
+          } catch (error) {
+            console.error(`Error fetching details for ${url}:`, error)
+            return createPlaceholderPokemon("unknown", url)
+          }
         })
-      } catch (error) {
-        console.error(`Error fetching details for ${url}:`, error)
-        pokemonDetails.push(createPlaceholderPokemon("unknown", url))
-      }
+      )
+      
+      pokemonDetails.push(...batchResults)
     }
 
     return {

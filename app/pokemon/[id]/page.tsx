@@ -1,62 +1,158 @@
-"use client"
+import Image from "next/image"
+import Link from "next/link"
+import { notFound } from "next/navigation"
+import { getPokemonById } from "@/lib/pokemon"
 
-import { useSearchParams } from "next/navigation"
-import PokemonList from "@/components/pokemon-list"
-import PokemonTypeFilter from "@/components/pokemon-type-filter"
-import Pagination from "@/components/pagination"
-import LoadingSpinner from "@/components/loading-spinner"
-import { usePokemonList } from "@/hooks/use-pokemon"
-import { API_CONFIG } from "@/constants/api"
+// Set revalidation time to 1 day
+export const revalidate = 86400
 
-export default function Home() {
-  const searchParams = useSearchParams()
-  const page = Number(searchParams.get("page")) || 1
-  const selectedType = searchParams.get("type") || ""
+export default async function PokemonDetail({ params }: { params: { id: string } }) {
+  const id = params.id
 
-  // Use SWR hook to fetch Pokemon data
-  const { pokemon, count, isLoading, isLoadingDetails, isError } = usePokemonList(page, selectedType)
+  // Fetch Pokemon data on the server with caching
+  const pokemon = await getPokemonById(id)
 
-  // Calculate pagination values
-  const pageSize = API_CONFIG.PAGINATION.LIMIT
-  const totalPages = Math.ceil(count / pageSize)
+  if (!pokemon) {
+    notFound()
+  }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-yellow-50 to-blue-50 px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-yellow-50 to-blue-50 px-4 py-8">
       <div className="container mx-auto">
-        <h1 className="text-4xl font-bold text-center mb-2 text-blue-700 drop-shadow-md">Pokémon Explorer</h1>
-        <p className="text-center mb-8 text-blue-600">Gotta catch 'em all!</p>
+        <Link
+          href="/"
+          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-colors mb-6"
+        >
+          &larr; Back to Pokédex
+        </Link>
 
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-          <PokemonTypeFilter selectedType={selectedType} />
-        </div>
-
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-20 bg-white/80 rounded-xl shadow-lg">
-            <LoadingSpinner size="large" />
-            <p className="mt-4 text-lg font-medium text-blue-700 animate-pulse">Catching Pokémon...</p>
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden border-2 border-yellow-400">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4">
+            <h1 className="text-3xl font-bold capitalize">{pokemon.name}</h1>
+            <p className="text-yellow-300 font-bold">#{pokemon.id.toString().padStart(3, "0")}</p>
           </div>
-        ) : isError ? (
-          <div className="text-center py-10 bg-white/80 rounded-xl shadow-lg">
-            <p className="text-xl text-red-500">Error loading Pokémon. Please try again later.</p>
-          </div>
-        ) : (
-          <>
-            <PokemonList pokemon={pokemon} />
 
-            {isLoadingDetails && (
-              <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center">
-                <LoadingSpinner size="small" />
-                <span className="ml-2">Loading details...</span>
+          <div className="p-8">
+            <div className="flex flex-col md:flex-row items-center">
+              <div className="relative w-64 h-64 mb-6 md:mb-0 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 shadow-inner">
+                <Image
+                  src={pokemon.image || "/placeholder.svg"}
+                  alt={pokemon.name}
+                  fill
+                  className="object-contain"
+                  priority
+                />
               </div>
-            )}
-          </>
-        )}
 
-        <div className="mt-8">
-          <Pagination currentPage={page} totalPages={totalPages || 1} selectedType={selectedType} />
+              <div className="md:ml-8 w-full">
+                <div className="flex flex-wrap gap-2 mb-6">
+                  {pokemon.types.map((type) => (
+                    <span
+                      key={type}
+                      className="px-4 py-2 rounded-full text-white text-sm font-bold shadow-sm"
+                      style={{ backgroundColor: getTypeColor(type) }}
+                    >
+                      {type}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 p-4 rounded-lg shadow-inner">
+                    <h2 className="text-lg font-bold mb-3 text-blue-700">Details</h2>
+                    <p className="mb-2">
+                      <span className="font-bold text-gray-700">Height:</span>
+                      <span className="ml-2 text-blue-800">{pokemon.height / 10}m</span>
+                    </p>
+                    <p>
+                      <span className="font-bold text-gray-700">Weight:</span>
+                      <span className="ml-2 text-blue-800">{pokemon.weight / 10}kg</span>
+                    </p>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 rounded-lg shadow-inner">
+                    <h2 className="text-lg font-bold mb-3 text-blue-700">Abilities</h2>
+                    <ul className="space-y-1">
+                      {pokemon.abilities.map((ability) => (
+                        <li key={ability} className="capitalize flex items-center">
+                          <span className="w-2 h-2 bg-yellow-400 rounded-full mr-2"></span>
+                          <span className="text-blue-800">{ability.replace("-", " ")}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 bg-gray-50 p-6 rounded-lg shadow-inner">
+              <h2 className="text-xl font-bold mb-4 text-blue-700">Stats</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {pokemon.stats.map((stat) => (
+                  <div key={stat.name}>
+                    <div className="flex justify-between mb-1">
+                      <span className="capitalize font-medium text-gray-700">{stat.name.replace("-", " ")}</span>
+                      <span className="font-bold text-blue-800">{stat.value}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div
+                        className="h-3 rounded-full"
+                        style={{
+                          width: `${Math.min(100, (stat.value / 255) * 100)}%`,
+                          backgroundColor: getStatColor(stat.name, stat.value),
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </main>
+    </div>
   )
+}
+
+// Helper function to get color based on Pokemon type
+function getTypeColor(type: string): string {
+  const typeColors: Record<string, string> = {
+    normal: "#A8A77A",
+    fire: "#EE8130",
+    water: "#6390F0",
+    electric: "#F7D02C",
+    grass: "#7AC74C",
+    ice: "#96D9D6",
+    fighting: "#C22E28",
+    poison: "#A33EA1",
+    ground: "#E2BF65",
+    flying: "#A98FF3",
+    psychic: "#F95587",
+    bug: "#A6B91A",
+    rock: "#B6A136",
+    ghost: "#735797",
+    dragon: "#6F35FC",
+    dark: "#705746",
+    steel: "#B7B7CE",
+    fairy: "#D685AD",
+  }
+
+  return typeColors[type.toLowerCase()] || "#777777"
+}
+
+// Helper function to get color based on stat value
+function getStatColor(statName: string, value: number): string {
+  // Different colors based on stat type
+  const baseColors: Record<string, string> = {
+    hp: "#FF5959",
+    attack: "#F5AC78",
+    defense: "#FAE078",
+    "special-attack": "#9DB7F5",
+    "special-defense": "#A7DB8D",
+    speed: "#FA92B2",
+  }
+
+  // Default to blue if stat name not found
+  return baseColors[statName] || "#6890F0"
 }
 

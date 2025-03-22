@@ -6,11 +6,12 @@ import LoadingSpinner from "./loading-spinner"
 
 interface PokemonTypeFilterProps {
   selectedType: string
+  initialTypes?: string[]
 }
 
-export default function PokemonTypeFilter({ selectedType }: PokemonTypeFilterProps) {
+export default function PokemonTypeFilter({ selectedType, initialTypes }: PokemonTypeFilterProps) {
   const router = useRouter()
-  const { types, isLoading } = usePokemonTypes()
+  const { types, isLoading } = usePokemonTypes(initialTypes)
 
   const handleTypeChange = (type: string) => {
     const params = new URLSearchParams()
@@ -25,7 +26,7 @@ export default function PokemonTypeFilter({ selectedType }: PokemonTypeFilterPro
     router.push(`/?${params.toString()}`)
   }
 
-  if (isLoading) {
+  if (isLoading && !initialTypes) {
     return (
       <div className="flex justify-center py-4">
         <LoadingSpinner />

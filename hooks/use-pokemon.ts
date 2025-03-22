@@ -13,10 +13,15 @@ const fetcher = async (url: string) => {
   }
 }
 
+interface PokemonListOptions {
+  fallbackData?: Pokemon[]
+  fallbackCount?: number
+}
+
 /**
  * Hook for fetching a paginated list of Pokemon with optional type filtering
  */
-export function usePokemonList(page = 1, type = "") {
+export function usePokemonList(page = 1, type = "", options?: PokemonListOptions) {
   const { LIMIT } = API_CONFIG.PAGINATION
 
   // Create the appropriate key based on whether we're filtering by type
@@ -95,6 +100,9 @@ export function usePokemonList(page = 1, type = "") {
       revalidateIfStale: false,
       dedupingInterval: 60000, // 1 minute
       errorRetryCount: 3,
+      fallbackData: options?.fallbackData
+        ? { results: options.fallbackData, count: options.fallbackCount || 0 }
+        : undefined,
     },
   )
 
@@ -102,6 +110,16 @@ export function usePokemonList(page = 1, type = "") {
   const { data: detailedPokemon, isLoading: isLoadingDetails } = useSWR(
     data ? `pokemon-details-${page}-${type}` : null,
     async () => {
+      // If we have fallback data with complete details, use it
+      if (
+        options?.fallbackData &&
+        options.fallbackData.length > 0 &&
+        options.fallbackData[0].types &&
+        options.fallbackData[0].types.length > 0
+      ) {
+        return options.fallbackData
+      }
+
       if (!data?.results) return []
 
       const pokemonDetails: Pokemon[] = []
@@ -149,6 +167,8 @@ export function usePokemonList(page = 1, type = "") {
     {
       revalidateOnFocus: false,
       dedupingInterval: 60000, // 1 minute
+      fallbackData:
+        options?.fallbackData && options.fallbackData[0]?.types?.length > 0 ? options.fallbackData : undefined,
     },
   )
 
@@ -189,7 +209,7 @@ export function usePokemonList(page = 1, type = "") {
 /**
  * Hook for fetching a single Pokemon by ID
  */
-export function usePokemonDetail(id: string | number) {
+export function usePokemonDetail(id: string | number, initialData?: Pokemon) {
   const { data, error, isLoading } = useSWR(
     id ? `pokemon-${id}` : null,
     async () => {
@@ -221,6 +241,7 @@ export function usePokemonDetail(id: string | number) {
       revalidateOnFocus: false,
       dedupingInterval: 3600000, // 1 hour
       errorRetryCount: 3,
+      fallbackData: initialData,
     },
   )
 
@@ -234,7 +255,7 @@ export function usePokemonDetail(id: string | number) {
 /**
  * Hook for fetching all Pokemon types
  */
-export function usePokemonTypes() {
+export function usePokemonTypes(initialTypes?: string[]) {
   // Cached types as fallback
   const cachedTypes = [
     "normal",
@@ -275,7 +296,7 @@ export function usePokemonTypes() {
     {
       revalidateOnFocus: false,
       dedupingInterval: 86400000, // 24 hours
-      fallbackData: cachedTypes,
+      fallbackData: initialTypes || cachedTypes,
     },
   )
 

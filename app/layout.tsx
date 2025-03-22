@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Pokémon Explorer",
   description: "Explore Pokémon with filtering and pagination",
-    generator: 'buisinam1991'
+    generator: 'nambs'
 }
 
 export default function RootLayout({

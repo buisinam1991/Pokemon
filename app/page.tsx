@@ -1,20 +1,26 @@
-"use client"
-
-import { useSearchParams } from "next/navigation"
-import PokemonList from "@/components/pokemon-list"
+import { Suspense } from "react"
+import PokemonList from "@/components/pokemon-list-server"
 import PokemonTypeFilter from "@/components/pokemon-type-filter"
-import Pagination from "@/components/pagination"
-import LoadingSpinner from "@/components/loading-spinner"
-import { usePokemonList } from "@/hooks/use-pokemon"
+import Pagination from "@/components/pagination-server"
+import { getPokemonList, getPokemonTypes } from "@/lib/pokemon"
 import { API_CONFIG } from "@/constants/api"
+import LoadingPokemon from "@/components/loading-pokemon"
 
-export default function Home() {
-  const searchParams = useSearchParams()
-  const page = Number(searchParams.get("page")) || 1
-  const selectedType = searchParams.get("type") || ""
+// Set revalidation time to 1 hour
+export const revalidate = 3600
 
-  // Use SWR hook to fetch Pokemon data
-  const { pokemon, count, isLoading, isError } = usePokemonList(page, selectedType)
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: { page?: string; type?: string }
+}) {
+  // Get page and type from search params
+  const page = Number(searchParams.page) || 1
+  const selectedType = searchParams.type || ""
+
+  // Fetch initial data on the server with caching
+  const { results: pokemon, count } = await getPokemonList(page, selectedType)
+  const types = await getPokemonTypes()
 
   // Calculate pagination values
   const pageSize = API_CONFIG.PAGINATION.LIMIT
@@ -27,21 +33,14 @@ export default function Home() {
         <p className="text-center mb-8 text-blue-600">Gotta catch 'em all!</p>
 
         <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-          <PokemonTypeFilter selectedType={selectedType} />
+          <Suspense fallback={<div>Loading types...</div>}>
+            <PokemonTypeFilter selectedType={selectedType} initialTypes={types} />
+          </Suspense>
         </div>
 
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-20 bg-white/80 rounded-xl shadow-lg">
-            <LoadingSpinner size="large" />
-            <p className="mt-4 text-lg font-medium text-blue-700 animate-pulse">Catching Pokémon...</p>
-          </div>
-        ) : isError ? (
-          <div className="text-center py-10 bg-white/80 rounded-xl shadow-lg">
-            <p className="text-xl text-red-500">Error loading Pokémon. Please try again later.</p>
-          </div>
-        ) : (
+        <Suspense fallback={<LoadingPokemon />}>
           <PokemonList pokemon={pokemon} />
-        )}
+        </Suspense>
 
         <div className="mt-8">
           <Pagination currentPage={page} totalPages={totalPages || 1} selectedType={selectedType} />
